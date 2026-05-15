@@ -1,159 +1,209 @@
-﻿using RestSharp;
+﻿using ConsoleApp3.Classes;
+using RestSharp;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+//using System.Net.Http;
 
 namespace ConsoleApp3
 {
     internal class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
-            // 🔐 Variables principales
-            string baseUrl = GetBaseUrl();
-            string endpoint = GetEndpoint();
 
-            string apiKey = GetApiKey();
-            string apiSecret = GetApiSecret();
 
-            long timestamp = GetTimestamp();
-            string signature = GenerateSignature(apiKey, apiSecret, timestamp);
+            var apiKey = "RRA7tuiGQpI2yoNnLQTFcWhgwRfy3nN4";
+            var apiSecret = "Sx7tAGWUjh8GZc4tNfl3Aoe3SQFiVriz";
 
-            string bodyJson = BuildBody();
+            var resultStatus = await GetMemberStatus(apiKey, apiSecret);
+            Console.WriteLine(resultStatus);
 
-            var client = CreateClient(baseUrl);
-            var request = CreateRequest(endpoint);
+            var result = await GetMemberRewards(apiKey, apiSecret);
+            Console.WriteLine(result);
 
-            AddHeaders(request, apiKey, signature, timestamp);
-            AddBody(request, bodyJson);
+            var resultLookup = await Lookup(apiKey, apiSecret);
+            Console.WriteLine(resultLookup);
 
-            IRestResponse response = client.Execute(request);
 
-            //var response = ExecuteRequest(client, request);
 
-            //PrintResponse(response);
-
-            Console.ReadLine(); // para que no cierre la consola
         }
 
-
-        // =========================
-        // 🔹 CONFIG / VARIABLES
-        // =========================
-
-        static string GetBaseUrl()
+        static async Task<string> GetMemberStatus(string apiKey, string apiSecret)
         {
-            return "https://mbs.qa.services.adidas.com";
+            Console.WriteLine("\n=== GET: Member Status ===\n");
+
+            var brand = "ADI";
+            var country = "CL";
+            var memberId = "LEXGPSNFMLKLS2JA";
+
+            var url = $"https://mbs.qa.services.adidas.com/membership/{brand}/{country}/members/{memberId}/status";
+
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var signature = GenerateSignature(apiKey, apiSecret, timestamp);
+
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+
+            // Headers (incluyendo Cookie como en el ejemplo)
+            request.Headers.Add("Accept", "application/json");
+            request.Headers.Add("Instance-UID", "server-side");
+            request.Headers.Add("Consumer-Type", "server-side");
+            request.Headers.Add("x-api-key", apiKey);
+            request.Headers.Add("x-signature", signature);
+            request.Headers.TryAddWithoutValidation("Content-Type", "application/json");
+            //request.Headers.Add("Pragma", "X-Akamai-Session-Info,akamai-x-cache-on, akamai-x-cache-remote-on, akamai-x-check-cacheable, akamai-x-get-cache-key, akamai-x-get-nonces, akamai-x-get-ssl-client-session-id, akamai-x-get-true-cache-key, akamai-x-serial-no, akamai-x-get-request-id");
+
+
+
+            Console.WriteLine($"Timestamp: {timestamp}");
+            Console.WriteLine($"Signature: {signature}");
+            Console.WriteLine($"URL: {url}\n");
+
+            var client = new HttpClient();
+            var response = await client.SendAsync(request);
+            var result = await response.Content.ReadAsStringAsync();
+
+            Console.WriteLine($"Status: {(int)response.StatusCode} {response.StatusCode}");
+            Console.WriteLine($"Response: {FormatJson(result)}");
+
+            return $"Status: {(int)response.StatusCode}\nResponse: {FormatJson(result)}";
         }
 
-        static string GetEndpoint()
+        static async Task<string> GetMemberRewards(string apiKey, string apiSecret)
         {
-            return "/membership/lookup/acid";
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var signature = GenerateSignature(apiKey, apiSecret, timestamp);
+
+            var url = "https://mbs.qa.services.adidas.com/membership/ADI/CL/members/LEXGPSNFMLKLS2JA/rewards?rewardType=&metaDataFlag=false";
+
+            var client = new HttpClient();
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+
+            // Headers
+            request.Headers.Add("Accept", "application/json");
+            request.Headers.Add("x-api-key", apiKey);
+            request.Headers.Add("x-signature", signature);
+            request.Headers.Add("Instance-UID", "server-side");
+            request.Headers.Add("Consumer-Type", "server-side");
+            request.Headers.TryAddWithoutValidation("Content-Type", "application/json");
+            //request.Headers.Add("Content-Type", "application/json");
+            //request.Headers.Add("Pragma", "X-Akamai-Session-Info,akamai-x-cache-on, akamai-x-cache-remote-on, akamai-x-check-cacheable, akamai-x-get-cache-key, akamai-x-get-nonces, akamai-x-get-ssl-client-session-id, akamai-x-get-true-cache-key, akamai-x-serial-no, akamai-x-get-request-id");
+
+            Console.WriteLine($"Timestamp: {timestamp}");
+            Console.WriteLine($"Signature: {signature}");
+            Console.WriteLine($"URL: {url}\n");
+
+            var response = await client.SendAsync(request);
+
+
+            string rr = "";
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadAsStringAsync();
+
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                };
+
+                Vaucher response1 = JsonSerializer.Deserialize<Vaucher>(result, options);
+
+
+                var filteredRewards = response1.Rewards
+                .Where(r =>
+                    r.RewardType == "VOUCHER" &&
+                    r.Status == "ACTIVE" 
+                )
+                .ToList();
+
+                rr = JsonSerializer.Serialize(filteredRewards, options);
+
+            }
+            else
+            {
+                rr = "se ha producido un error al consultar en el api " + response.StatusCode.ToString();
+            }
+
+
+
+
+             return $"Status: {(int)response.StatusCode}\nResponse: {FormatJson(rr)}";
         }
 
-        static string GetApiKey()
+        static async Task<string> Lookup(string apiKey, string apiSecret)
         {
-            return "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-        }
+            
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var signature = GenerateSignature(apiKey, apiSecret, timestamp);
 
-        static string GetApiSecret()
-        {
-            return "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-        }
 
-        static long GetTimestamp()
-        {
-            return DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        }
+            // Crear request
+            var request = new HttpRequestMessage(HttpMethod.Post,
+                "https://mbs.qa.services.adidas.com/membership/lookup/acid");
 
-        
+            // Headers del request
+            request.Headers.Add("Instance-UID", "server-side");
+            request.Headers.Add("Consumer-Type", "server-side");
+            request.Headers.Add("x-api-key", apiKey);
+            request.Headers.Add("x-signature", signature);
+
+            // Body
+            var body = new { brand = "ADI", country = "CL", email = "santiago.gonzalez@externals.adidas.com" };
+            var json = JsonSerializer.Serialize(body);
+            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            // Enviar
+            var client = new HttpClient();
+            var response = await client.SendAsync(request);
+            var status = response.StatusCode;
+            var result = await response.Content.ReadAsStringAsync();
+
+            Console.WriteLine($"Status: {response.StatusCode}");
+            Console.WriteLine($"Response: {result}");
+
+            return $"Status: {(int)response.StatusCode}\nResponse: {FormatJson(result)}";
+        }
 
 
         static string GenerateSignature(string apiKey, string apiSecret, long timestamp)
         {
-            // ⚠️ concatenación EXACTA (sin espacios)
-            string raw = $"{apiKey}{apiSecret}{timestamp}";
+            // Concatenar: apiKey + apiSecret + timestamp
+            var input = $"{apiKey}{apiSecret}{timestamp}";
 
+            // Calcular SHA256
             using (var sha256 = SHA256.Create())
             {
-                byte[] bytes = Encoding.UTF8.GetBytes(raw);
-                byte[] hash = sha256.ComputeHash(bytes);
+                var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(input));
 
-                // convertir a HEX igual que CryptoJS
-                var sb = new StringBuilder();
-                foreach (var b in hash)
-                    sb.Append(b.ToString("x2")); // minúscula
+                // Método compatible con todas las versiones de .NET
+                var hexString = new StringBuilder(hashBytes.Length * 2);
+                foreach (byte b in hashBytes)
+                {
+                    hexString.Append(b.ToString("x2"));
+                }
 
-                return sb.ToString();
+                return hexString.ToString();
             }
         }
 
-        // =========================
-        // 🔹 BODY
-        // =========================
-
-        static string BuildBody()
+        static string FormatJson(string json)
         {
-            var body = new
+            try
             {
-                brand = "ADI",
-                country = "CL",
-                email = "santiago.gonzalez@externals.adidas.com"
-            };
-
-            return JsonSerializer.Serialize(body);
+                var obj = JsonSerializer.Deserialize<object>(json);
+                return JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true });
+            }
+            catch
+            {
+                return json;
+            }
         }
 
-        // =========================
-        // 🔹 REQUEST
-        // =========================
 
-        static RestClient CreateClient(string baseUrl)
-        {
-            return new RestClient(baseUrl);
-        }
-
-        static RestRequest CreateRequest(string endpoint)
-        {
-            return new RestRequest(endpoint, Method.POST);
-        }
-
-        static void AddHeaders(RestRequest request, string apiKey, string signature, long timestamp)
-        {
-            request.AddHeader("Content-Type", "application/json");
-            request.AddHeader("x-api-key", apiKey);
-            request.AddHeader("x-signature", signature);
-
-            // ⚠️ si la API lo requiere
-            //request.AddHeader("x-timestamp", timestamp.ToString());
-
-            request.AddHeader("Instance-UID", "server-side");
-            request.AddHeader("Consumer-Type", "server-side");
-        }
-
-        static void AddBody(RestRequest request, string json)
-        {
-            request.AddParameter("application/json", json, ParameterType.RequestBody);
-        }
-
-        //static RestResponse ExecuteRequest(RestClient client, RestRequest request)
-        //{
-        //    return client.Execute(request); // síncrono
-        //}
-
-        // =========================
-        // 🔹 RESPONSE
-        // =========================
-
-        static void PrintResponse(RestResponse response)
-        {
-            Console.WriteLine("Status: " + response.StatusCode);
-            Console.WriteLine("Response:");
-            Console.WriteLine(response.Content);
-        }
     }
 }
