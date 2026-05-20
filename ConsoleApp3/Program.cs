@@ -24,7 +24,7 @@ namespace ConsoleApp3
             var resultStatus = await GetMemberStatus(apiKey, apiSecret);
             Console.WriteLine(resultStatus);
 
-            var result = await GetMemberRewards(apiKey, apiSecret);
+            //var resultLookup = await Lookup(apiKey, apiSecret);
             Console.WriteLine(result);
 
             var resultLookup = await Lookup(apiKey, apiSecret);
